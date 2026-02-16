@@ -1,0 +1,36 @@
+{
+  "test_loss": 3.457692529966285,
+  "test_perplexity": 31.74364443312456,
+  "bleu": 0.1585468149831796,
+  "rouge1": 0.48308035601843174,
+  "rouge2": 0.1990551552447989,
+  "rougeL": 0.38144730162321083,
+  "num_bleu_samples": 500,
+  "examples": [
+    {
+      "code": "def sina_xml_to_url_list(xml_data):\n    \"\"\"str->list\n    Convert XML to URL List.\n    From Biligrab.\n    \"\"\"\n    rawurl = []\n    dom = parseString(xml_data)\n    for node in dom.getElementsByTagName('d...",
+      "reference": "str->list\n    Convert XML to URL List.\n    From Biligrab.",
+      "predicted": "Parse URL to URL"
+    },
+    {
+      "code": "def dailymotion_download(url, output_dir='.', merge=True, info_only=False, **kwargs):\n    \"\"\"Downloads Dailymotion videos by URL.\n    \"\"\"\n\n    html = get_content(rebuilt_url(url))\n    info = json.load...",
+      "reference": "Downloads Dailymotion videos by URL.",
+      "predicted": "Search URL by pattern"
+    },
+    {
+      "code": "def sina_download(url, output_dir='.', merge=True, info_only=False, **kwargs):\n    \"\"\"Downloads Sina videos by URL.\n    \"\"\"\n    if 'news.sina.com.cn/zxt' in url:\n        sina_zxt(url, output_dir=outpu...",
+      "reference": "Downloads Sina videos by URL.",
+      "predicted": "Search URL by url"
+    },
+    {
+      "code": "def sprint(text, *colors):\n    \"\"\"Format text with color or other effects into ANSI escaped string.\"\"\"\n    return \"\\33[{}m{content}\\33[{}m\".format(\";\".join([str(color) for color in colors]), RESET, co...",
+      "reference": "Format text with color or other effects into ANSI escaped string.",
+      "predicted": "Convert text into unicode string."
+    },
+    {
+      "code": "def print_log(text, *colors):\n    \"\"\"Print a log message to standard error.\"\"\"\n    sys.stderr.write(sprint(\"{}: {}\".format(script_name, text), *colors) + \"\\n\")",
+      "reference": "Print a log message to standard error.",
+      "predicted": "Log a message to a logger."
+    }
+  ]
+}
