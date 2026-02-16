@@ -1,0 +1,425 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{newtxtext}
+\usepackage{newtxmath}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{fancyvrb}
+\usepackage[hidelinks]{hyperref}
+
+\setlist{noitemsep}
+\setlength{\parindent}{0pt}
+
+\title{ML-Based Python Code Summarization\\using Transformer Architecture}
+\author{Muhammad Sohail}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+\newpage
+
+\tableofcontents
+\newpage
+
+\section{Project Overview}
+
+This project implements a machine learning-based Python code summarization system using a sequence-to-sequence Transformer architecture. The goal is to automatically generate natural language summaries from Python source code, creating meaningful docstrings that describe functionality. The system employs a Transformer-based encoder-decoder architecture trained on Python code and corresponding documentation pairs. The model learns to map source code tokens to natural language summaries, capturing semantic relationships between code structure and its functionality.
+
+\section{Project Structure}
+
+The project is organized into logical modules separating model definition, data handling, and execution scripts:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+project_root/
++-- data/
+|   +-- tokenizer.json              # Trained BPE tokenizer
+|   +-- tokenizer_training.ipynb   # Tokenizer training notebook
++-- models/
+|   +-- transformer.py  # Encoder-decoder Transformer
++-- utils/
+|   +-- dataset.py      # Dataset class and preprocessing
++-- notebooks/
+|   +-- training.ipynb   # Training visualization
+|   +-- evaluation.ipynb # Evaluation visualization
++-- train.py            # Main entry point for training
++-- evaluate.py         # Main entry point for metrics
++-- summarize.py        # Main entry point for demo
++-- report/report.pdf   # Report
+\end{Verbatim}
+
+\texttt{models/transformer.py} defines the encoder-decoder Transformer with multi-head self-attention. \texttt{utils/dataset.py} implements PyTorch's \texttt{Dataset} interface for loading and tokenizing code-docstring pairs. \texttt{train.py} orchestrates training (optimizer, loss, checkpoints), \texttt{evaluate.py} computes evaluation metrics on held-out data, and \texttt{summarize.py} provides a CLI for generating summaries from new code snippets. The \texttt{data/} directory stores preprocessed data and trained artifacts for reproducibility.
+
+\section{Data Source Selection}
+
+We went with \textbf{CodeXGLUE}\footnote{\url{https://github.com/microsoft/CodeXGLUE}} (General Language Understanding Evaluation benchmark for Code). The main reason is that it already wraps CodeSearchNet into a single benchmark, so we get clean code-docstring pairs without having to build our own preprocessing. This dataset serves as a comprehensive benchmark to address the lack of consistent, high-quality evaluation datasets for tasks involving code understanding and generation.
+
+We applied a Python filter to only get the code summarization portion:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+from datasets import load_dataset
+
+code_x_glue_dataset = load_dataset(
+    "google/code_x_glue_ct_code_to_text",
+    "python"
+)
+\end{Verbatim}
+
+This gives us train, validation, and test splits. Each example has a \texttt{code} field and a \texttt{docstring} field, which is the input-output pair our model learns from.
+
+\section{Tokenization}
+
+A tokenizer is in charge of preparing the inputs for a model. Tokenizing means splitting strings into sub-word token strings, converting tokens strings to IDs and back, and encoding/decoding (i.e., tokenizing and converting to integers). We built our tokenizer in four steps.\footnote{Andrej Karpathy, ``Let's build the GPT Tokenizer'' \url{https://www.youtube.com/watch?v=MlDP2BVWjS0}}\textsuperscript{,}\footnote{Hugging Face Tokenizer Documentation \url{https://huggingface.co/docs/transformers/en/main_classes/tokenizer}}
+
+\textbf{Step 1 -- The Shell.} We initialize a tokenizer that uses BPE and has a safety net:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
+\end{Verbatim}
+
+This line initiates a shell tokenizer. It has the BPE algorithm and a safety net (\texttt{[UNK]}). We used \texttt{[UNK]} so that it does not crash on words it does not understand and puts \texttt{[UNK]} instead.
+
+BPE (Byte-Pair Encoding) is an iterative and greedy algorithm. It starts by seeing every character individually, then it creates a merge rule pairing the most frequent characters together. After enough merges, common Python keywords like \texttt{def}, \texttt{return}, and \texttt{if} end up being treated as single, atomic tokens.
+
+\textbf{Step 2 -- The Scissors (Pre-tokenizer).} If the tokenizer is the shell, then \texttt{ByteLevel} is the scissors. The pre-tokenizer cuts a long, continuous string of Python code into individual initial chunks based on spaces, punctuation, and byte-values. We set \texttt{add\_prefix\_space=False} to avoid adding a space at the start of every string:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+tokenizer.pre_tokenizer = ByteLevel(add_prefix_space=False)
+\end{Verbatim}
+
+We used \texttt{ByteLevel} instead of \texttt{Whitespace} because \texttt{Whitespace} would remove whitespace characters entirely. With \texttt{ByteLevel}, whitespaces get converted into bytes first, so they are preserved rather than being thrown away.
+
+\textbf{Step 3 -- Trainer Configuration.}
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+trainer = BpeTrainer(vocab_size=32000,
+                     min_frequency=2,
+                     special_tokens=["[UNK]", "[PAD]", "[SOS]", "[EOS]"])
+\end{Verbatim}
+
+\texttt{vocab\_size} directly affects two parts of the model: the Embedding Layer (the input) and the Softmax Layer (the output). For example, if the vocabulary size is 5,000 and the embedding dimension is 512, the embedding matrix inside the model is a table of size 5,000 $\times$ 512. We went with 32,000 which falls in the optimal range of 25,000--32,000. At this size, most Python keywords and common variable names become single tokens. If we used something too small like 5,000, it would start splitting words up---\texttt{return} would become \texttt{["ret", "urn"]}.
+
+\texttt{min\_frequency} is set to 2, meaning a character combination has to appear at least twice in the training data before BPE will merge it into a single token.
+
+For the special tokens, their order matters because it determines their IDs: \texttt{[UNK]}=0 is the safety net---if a word is not in the 32k vocabulary, it gets replaced with \texttt{[UNK]} instead of crashing. \texttt{[PAD]}=1 is the padding token---if one Python function is shorter than another in the same batch, the extra space gets filled with \texttt{[PAD]}. \texttt{[SOS]}=2 (Start of Sequence) is the green signal that tells the model to start generating. \texttt{[EOS]}=3 (End of Sequence) tells the model when to stop---without this, the model would never know when to stop writing.
+
+\textbf{Step 4 -- Training the Tokenizer.} We feed both the code and the docstring from the training split so the tokenizer learns the vocabulary of both Python code (e.g. \texttt{def}, \texttt{return}) and English text (e.g. ``This function''). To avoid loading everything into memory at once, we use a generator function (\texttt{get\_corpus}) that yields one string at a time:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+tokenizer.train_from_iterator(get_corpus(), trainer=trainer)
+\end{Verbatim}
+
+We also set up a \texttt{ByteLevelDecoder} so that when we decode token IDs back into text, the byte-level characters (like \texttt{\.{G}} which replaces spaces) get converted back to normal readable text. After training, the tokenizer is saved as \texttt{tokenizer.json} in the \texttt{data/} directory so it can be reloaded later for training and inference without retraining.
+
+\section{Data Loading and Preprocessing}
+
+Once the tokenizer is trained and saved, the next step is building a data pipeline that feeds code-docstring pairs into the model in the right format. This is handled by \texttt{utils/dataset.py}, which implements PyTorch's \texttt{Dataset} interface.
+
+\subsection{Special Token IDs}
+
+At the top of the file we define the special token IDs. These must match the exact order we used when training the tokenizer in Section~4, otherwise the model would confuse padding with end-of-sequence or start-of-sequence signals:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+UNK_ID = 0
+PAD_ID = 1
+SOS_ID = 2
+EOS_ID = 3
+\end{Verbatim}
+
+\subsection{The Dataset Class}
+
+We subclass PyTorch's \texttt{Dataset}, which requires two methods: \texttt{\_\_len\_\_} (how many examples) and \texttt{\_\_getitem\_\_} (return one example by index). In \texttt{\_\_init\_\_}, we load the tokenizer from the saved \texttt{tokenizer.json} file and load the CodeXGLUE dataset for the requested split:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+class CodeSummarizationDataset(Dataset):
+    def __init__(self, split, tokenizer_path, max_length=128):
+        self.tokenizer = Tokenizer.from_file(tokenizer_path)
+        self.max_length = max_length
+        dataset = load_dataset(
+            "google/code_x_glue_ct_code_to_text", "python"
+        )
+        self.data = dataset[split]
+\end{Verbatim}
+
+The tokenizer and dataset are loaded once in \texttt{\_\_init\_\_} rather than in \texttt{\_\_getitem\_\_} because \texttt{\_\_init\_\_} runs once when we create the object, while \texttt{\_\_getitem\_\_} runs for every single example (251,820 times for the training split). Loading them every time would be extremely wasteful.
+
+We set \texttt{max\_length=128} to truncate sequences that are too long. This is a tradeoff: the Transformer's self-attention compares every token to every other token, so the cost grows quadratically ($128 \times 128 = 16{,}384$ comparisons versus $512 \times 512 = 262{,}144$ at length 512). Most Python functions in CodeXGLUE fit comfortably within 128 tokens, and the ones that get truncated usually still have enough context (the function signature and first few lines) for the model to generate a reasonable docstring.
+
+\subsection{Preparing Each Example}
+
+When the DataLoader asks for example $i$, \texttt{\_\_getitem\_\_} grabs the code and docstring from the dataset, tokenizes both into lists of integer IDs, and truncates them:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+code_ids = self.tokenizer.encode(code).ids[:self.max_length]
+doc_ids  = self.tokenizer.encode(docstring).ids[:self.max_length - 1]
+\end{Verbatim}
+
+The docstring is truncated to \texttt{max\_length - 1} because we need room to prepend \texttt{[SOS]} or append \texttt{[EOS]}. We then build two sequences from the same docstring tokens:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+decoder_input  = [SOS_ID] + doc_ids    # [SOS] + docstring
+decoder_target = doc_ids  + [EOS_ID]   # docstring + [EOS]
+\end{Verbatim}
+
+This is called \textbf{teacher forcing}: the decoder receives \texttt{[SOS]} followed by the docstring as its input, and the target is the same docstring followed by \texttt{[EOS]}. The idea is that at each time step, the decoder sees the correct previous token and learns to predict the next one. Once it predicts \texttt{[EOS]}, it knows to stop generating.
+
+To see why this shift matters, here is actual output from one training example (truncated for readability):
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+decoder_input:  tensor([   2, 7492, 10665, 576, 13642, ...])
+decoder_target: tensor([7492, 10665,  576, 13642,  ..., 3])
+\end{Verbatim}
+
+Notice the \texttt{decoder\_input} starts with 2 (\texttt{[SOS]}) and the \texttt{decoder\_target} ends with 3 (\texttt{[EOS]}). Everything in between is identical---they are the same docstring tokens, just shifted by one position. The model learns: ``given \texttt{[SOS]}, predict token 7492; given token 7492, predict token 10665; \ldots; given the last docstring token, predict \texttt{[EOS]} to stop.''
+
+Each example is returned as a dictionary of three PyTorch tensors: \texttt{code\_ids} (the encoder input), \texttt{decoder\_input} (what the decoder receives), and \texttt{decoder\_target} (what the decoder should predict).
+
+\subsection{Batching with Padding}
+
+Different functions have different lengths, but the model needs all sequences in a batch to be the same size for matrix operations. The \texttt{collate\_fn} function handles this by padding shorter sequences with the \texttt{[PAD]} token (ID=1). For example, a batch of three code sequences might look like this after padding:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+[10,  20,  30,   1,   1]   # Function 1 (padded with two 1s)
+[50,  60,  70,  80,  90]   # Function 2 (no padding needed)
+[100, 110,  1,   1,   1]   # Function 3 (padded with three 1s)
+\end{Verbatim}
+
+This function is not called directly---it is passed to PyTorch's \texttt{DataLoader}, which calls it automatically every time it assembles a batch of examples. The padding value 1 corresponds to \texttt{[PAD]}, which the model later learns to ignore during training through the loss function's \texttt{ignore\_index} parameter.
+
+\section{Model Architecture}
+
+Our model is an encoder-decoder Transformer built from three components: an embedding layer, the Transformer module, and an output projection layer. The encoder reads the Python code and the decoder generates the docstring one token at a time.
+
+\subsection{The Embedding Layer (Token ID $\rightarrow$ Vector)}
+
+The first step is to convert token IDs into dense vectors. We use a single shared embedding layer for both the encoder (code) and the decoder (docstring), since both sides use the same BPE vocabulary trained in Section~4:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+self.embedding = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
+\end{Verbatim}
+
+This creates a lookup table of size $32{,}000 \times 512$---one row of 512 numbers for each token in the vocabulary. When a token ID is passed in, the layer returns the corresponding 512-dimensional vector. For example, if the input is a sequence of 50 token IDs, the output is a matrix of shape $(50, 512)$.
+
+We use a shared embedding rather than separate ones for the encoder and decoder because both sides operate on the same vocabulary. Tokens like \texttt{def}, \texttt{return}, or \texttt{function} appear in both Python code and English docstrings, so sharing the embedding allows the model to learn a single, consistent representation for each token.
+
+The \texttt{padding\_idx=pad\_id} argument tells PyTorch to keep the embedding vector for \texttt{[PAD]} (ID=1) as all zeros and not update it during training. This ensures padding tokens carry no information.
+
+After the lookup, we scale the embeddings by $\sqrt{d\_model} = \sqrt{512} \approx 22.6$, following the original ``Attention Is All You Need'' paper. Without this scaling, the embedding values would be too small relative to the positional encoding that will be added later, and the model would lose track of the actual token identity.
+
+\subsection{Positional Encoding}
+
+To a Transformer, \texttt{for x in range(5)} looks exactly the same as \texttt{range(5) x in for}---without position information, the model cannot tell them apart. Unlike recurrent networks which process tokens one by one in order, the Transformer sees all tokens at once, so we need to explicitly inject position information into the embeddings.
+
+We use the sinusoidal positional encoding from ``Attention Is All You Need''. During initialization, we precompute a table of size $5{,}000 \times 512$ (5,000 positions is a safe upper limit; our sequences are at most 128 tokens):
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+pe = torch.zeros(max_len, d_model)
+position = torch.arange(0, max_len).float().unsqueeze(1)
+div_term = torch.exp(
+    torch.arange(0, d_model, 2).float()
+    * (-math.log(10000.0) / d_model)
+)
+pe[:, 0::2] = torch.sin(position * div_term)
+pe[:, 1::2] = torch.cos(position * div_term)
+\end{Verbatim}
+
+Each row in this table is a unique 512-dimensional vector for one position. The even dimensions use sine and the odd dimensions use cosine, with frequencies that decrease across dimensions. This means nearby positions get similar encodings while distant positions get different ones, giving the model a sense of order and relative distance.
+
+The table is stored as a \emph{buffer} (not a learnable parameter) using \texttt{register\_buffer}, so it moves to the GPU automatically but is never updated during training. In the forward pass, we simply add the positional encoding to the scaled embedding:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+x = x + self.pe[:, :x.size(1), :]
+\end{Verbatim}
+
+The result is that each token's vector now encodes both \emph{what} the token is (from the embedding) and \emph{where} it appears in the sequence (from the positional encoding).
+
+\subsection{The Transformer Module (Vector $\rightarrow$ Context-Aware Vector)}
+
+The core of the architecture is PyTorch's built-in \texttt{nn.Transformer}, which contains both the encoder and decoder stacks:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+self.transformer = nn.Transformer(
+    d_model=512,       # vector dimension
+    nhead=8,           # attention heads
+    num_encoder_layers=6,
+    num_decoder_layers=6,
+    dim_feedforward=2048,
+    dropout=0.1,
+    batch_first=True,
+)
+\end{Verbatim}
+
+At this point in \texttt{\_\_init\_\_}, we are only creating the structure---the layers, the attention heads, and the weight matrices that will store learned knowledge. No data flows through the model until \texttt{forward} is called.
+
+\textbf{What the encoder does.} The encoder takes the code embeddings and runs them through 6 layers of self-attention. Each layer lets every token look at every other token in the code and update its own representation accordingly. For example, in \texttt{for x in range(5)}, the token \texttt{x} starts as a generic variable name. After passing through the encoder, its vector is enriched with contextual information: that it is a loop iterator, that the loop runs 5 times, and that it is used inside a \texttt{for} statement. The ``dumb'' embedding vector becomes a ``smart'' context-aware vector.
+
+Each layer uses 8 attention heads, meaning the 512-dimensional vector is split into 8 independent groups of 64 dimensions. Each head can focus on a different type of relationship (one head might track variable names, another might track control flow), and the results are concatenated back together.
+
+\textbf{What the decoder does.} The decoder generates the docstring one token at a time. It also has 6 layers, but each layer has two attention mechanisms: self-attention over the tokens generated so far, and cross-attention over the encoder's output. The cross-attention is what allows the decoder to ``look at'' the code while writing the docstring.
+
+\textbf{Masks.} Two types of masks are used during the forward pass:
+
+\begin{enumerate}
+\item \textbf{Causal mask} (\texttt{target\_mask}): A triangular matrix that prevents the decoder from looking at future tokens. When predicting the 3rd word of the docstring, the decoder can only see words 1 and 2, not words 4 or 5. This is generated with:
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+target_mask = self.transformer.generate_square_subsequent_mask(target_len)
+\end{Verbatim}
+
+\item \textbf{Padding masks}: Boolean masks that tell the attention mechanism to ignore \texttt{[PAD]} tokens. Since sequences in a batch are padded to the same length (see Section~5.4), the model needs to know which positions are real tokens and which are just filler:
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+src_key_padding_mask = (code_ids == self.pad_id)
+target_key_padding_mask = (decoder_input == self.pad_id)
+\end{Verbatim}
+\end{enumerate}
+
+\textbf{Parameter count.} The total model has approximately 77 million trainable parameters: about 16M in the shared embedding, 18M in the 6 encoder layers, 27M in the 6 decoder layers (which have an extra cross-attention block per layer), and 16M in the output projection.
+
+\subsection{The Output Layer (Context-Aware Vector $\rightarrow$ Vocabulary Scores)}
+
+The final layer is a linear projection that converts the 512-dimensional output vectors from the decoder into scores over the full vocabulary:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+self.fc_out = nn.Linear(d_model, vocab_size)
+\end{Verbatim}
+
+Mathematically, this computes $y = xW + b$, where $x$ is a smart vector of 512 numbers, $W$ is a weight matrix of size $512 \times 32{,}000$, and $y$ is a list of 32,000 scores---one for each token in the vocabulary. The token with the highest score is the model's prediction for the next word.
+
+During training, these raw scores (called logits) are passed to the cross-entropy loss function, which converts them to probabilities and measures how far the prediction is from the correct answer. During inference, we take the highest-scoring token at each step (greedy decoding) to generate the docstring.
+
+\subsection{Hyperparameter Summary}
+
+Table~\ref{tab:hyperparams} summarizes the model hyperparameters:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+Vocabulary size & 32,000 \\
+Embedding dimension ($d\_model$) & 512 \\
+Attention heads & 8 \\
+Encoder layers & 6 \\
+Decoder layers & 6 \\
+Feedforward dimension & 2,048 \\
+Dropout & 0.1 \\
+Max sequence length & 128 tokens \\
+\bottomrule
+\end{tabular}
+\caption{Model hyperparameters.}
+\label{tab:hyperparams}
+\end{table}
+
+\section{Training Procedure}
+
+Training was conducted on Apple Silicon using MPS (Metal Performance Shaders) acceleration. To ensure compatibility with the Apple Silicon MPS backend, the \texttt{PYTORCH\_ENABLE\_MPS\_FALLBACK} environment variable was utilized. This allowed the model to handle specialized Transformer operations by falling back to the CPU where necessary, ensuring training stability on macOS. The full training run completed 10 epochs over the 251,820 training examples.
+
+\subsection{Optimizer and Learning Rate Schedule}
+
+We use the Adam optimizer with $\beta_1 = 0.9$, $\beta_2 = 0.98$, and $\epsilon = 10^{-9}$, following the original Transformer paper. The base learning rate is set to 1.0 because the actual learning rate is controlled entirely by the Noam schedule:
+
+\[
+lr = d\_model^{-0.5} \cdot \min(step^{-0.5},\ step \cdot warmup\_steps^{-1.5})
+\]
+
+This schedule linearly increases the learning rate during the first 4,000 warmup steps (reaching a peak of approximately $7 \times 10^{-4}$), then decays proportionally to $1/\sqrt{step}$. The warmup prevents early instability when the model's weights are still random, and the decay allows finer adjustments as the model converges.
+
+\subsection{Loss Function}
+
+We use cross-entropy loss with \texttt{ignore\_index=PAD\_ID}, so padding tokens do not contribute to the loss. At each position in the output sequence, the loss measures how far the model's predicted probability distribution (over 32,000 tokens) is from the correct next token. Gradient clipping is applied at a maximum norm of 1.0 to prevent exploding gradients.
+
+\subsection{Training Configuration}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Epochs & 10 \\
+Batch size & 32 \\
+Batches per epoch & 7,870 \\
+Optimizer & Adam ($\beta_1=0.9$, $\beta_2=0.98$) \\
+Learning rate schedule & Noam (warmup = 4,000 steps) \\
+Gradient clipping & 1.0 \\
+Loss function & CrossEntropyLoss (ignore\_index=1) \\
+Trainable parameters & 76,940,544 \\
+\bottomrule
+\end{tabular}
+\caption{Training configuration.}
+\label{tab:training_config}
+\end{table}
+
+\subsection{Training Results}
+
+Table~\ref{tab:training_results} shows the loss and perplexity for each epoch. The best model checkpoint was saved after every epoch that improved validation loss.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+\textbf{Epoch} & \textbf{Train Loss} & \textbf{Train PPL} & \textbf{Val Loss} & \textbf{Val PPL} \\
+\midrule
+1  & 4.8517 & 127.95 & 4.2824 & 72.41 \\
+2  & 3.9161 & 50.21  & 4.0021 & 54.71 \\
+3  & 3.6452 & 38.29  & 3.8445 & 46.74 \\
+4  & 3.5050 & 33.28  & 3.7869 & 44.12 \\
+5  & 3.4040 & 30.08  & 3.7200 & 41.26 \\
+6  & 3.3240 & 27.77  & 3.6703 & 39.26 \\
+7  & 3.2567 & 25.96  & 3.6627 & 38.97 \\
+8  & 3.2006 & 24.55  & 3.6049 & 36.78 \\
+9  & 3.1559 & 23.48  & 3.5751 & 35.70 \\
+10 & 3.1155 & 22.54  & 3.5688 & 35.47 \\
+\bottomrule
+\end{tabular}
+\caption{Training and validation loss and perplexity (PPL) per epoch.}
+\label{tab:training_results}
+\end{table}
+
+The largest improvement occurred between epochs 1 and 2, where the validation loss dropped from 4.28 to 4.00. The model continued improving through all 10 epochs, with the best checkpoint saved at epoch 10 (validation loss = 3.5688, perplexity = 35.47). Importantly, the validation loss decreased every epoch, indicating that the model did not overfit despite having 77 million parameters. The gap between training and validation loss widened slightly over time (from 0.57 in epoch 1 to 0.45 in epoch 10 for the absolute difference), which is normal and expected behavior.
+
+\section{Inference and Decoding}
+
+At inference time, the model generates a docstring for unseen code using \textbf{greedy decoding}. Unlike training where the decoder receives the correct previous token (teacher forcing), at inference the decoder must rely entirely on its own predictions. The process works as follows:
+
+\begin{enumerate}
+\item The source code is tokenized and passed through the encoder, producing context-aware representations.
+\item The decoder starts with a single \texttt{[SOS]} token.
+\item At each step, the model outputs a probability distribution over the 32,000-token vocabulary. The token with the highest score is selected and appended to the decoder input.
+\item This repeats until the model produces \texttt{[EOS]} or reaches the maximum length of 128 tokens.
+\end{enumerate}
+
+\subsection{Observed Limitations}
+
+Greedy decoding selects only the single most probable token at each step, which can cause \textbf{repetition loops}. For example, given a short input like \texttt{def add(x, y): return x + y}, the model produces:
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+Summary: return return x, y, return x, return x
+\end{Verbatim}
+
+This happens because the model has learned that tokens like \texttt{return}, \texttt{x}, and \texttt{y} are highly relevant to the input, but greedy decoding gets stuck re-selecting them without producing a coherent sentence. The model performs better on longer, more realistic functions similar to those in the training set, where there is more context for the encoder to work with.
+
+\subsection{Beam Search}
+
+To address the repetition problem, we replaced greedy decoding with \textbf{beam search} (beam width = 5). Instead of committing to a single token at each step, beam search maintains the top 5 most likely sequences simultaneously.
+
+At each decoding step, every active beam is expanded by considering its top 5 next tokens, producing up to 25 candidate sequences. These candidates are ranked by their \textbf{cumulative log probability} (the sum of log probabilities of all tokens in the sequence), and only the top 5 are kept. Decoding stops when the highest-scoring beam ends with \texttt{[EOS]}.
+
+\begin{Verbatim}[fontsize=\small,xleftmargin=1em]
+# each beam: (list of token ids, cumulative log probability)
+beams = [([SOS_ID], 0.0)]
+
+for each step:
+    for each (seq, score) in beams:
+        log_probs = log_softmax(model(code, seq))
+        top_5 = log_probs.topk(5)
+        for token, log_p in top_5:
+            candidates.append((seq + [token], score + log_p))
+    beams = top 5 candidates by score
+\end{Verbatim}
+
+This avoids the repetition loop because even if ``return'' scores highest at one position, the cumulative score of a sequence that repeats it multiple times will be lower than a sequence that produces a coherent sentence. The beam search explores multiple paths and selects the one with the best overall probability.
+
+\end{document}

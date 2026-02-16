@@ -1,0 +1,6 @@
+numpy<2
+torch
+tokenizers
+datasets
+nltk
+rouge-score
