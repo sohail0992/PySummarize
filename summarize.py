@@ -21,28 +21,14 @@ os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 from utils.inference import load_model, load_tokenizer, greedy_decode, get_device
 
 
-def _strip_docstring(node):
-    """Remove existing docstring from a function/class node before unparsing."""
-    import copy
-    node = copy.deepcopy(node)
-    if (node.body
-            and isinstance(node.body[0], ast.Expr)
-            and isinstance(node.body[0].value, ast.Constant)
-            and isinstance(node.body[0].value.value, str)):
-        node.body.pop(0)
-        if not node.body:
-            node.body.append(ast.Pass())
-    return node
-
-
 def extract_definitions(source: str) -> list[tuple[str, str]]:
-    """Return (name, code_snippet) for every function/class in *source*.
-    Both # comments and existing docstrings are stripped to save tokens."""
+    """Return (name, code_snippet) for every function/class in *source*."""
     tree = ast.parse(source)
+    lines = source.splitlines()
     items = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            snippet = ast.unparse(_strip_docstring(node))
+            snippet = "\n".join(lines[node.lineno - 1 : node.end_lineno])
             items.append((node.name, snippet))
     return items
 
