@@ -464,6 +464,38 @@ for each step:
 
 This avoids the repetition loop because even if ``return'' scores highest at one position, the cumulative score of a sequence that repeats it multiple times will be lower than a sequence that produces a coherent sentence. The beam search explores multiple paths and selects the one with the best overall probability.
 
+\subsection{File-Level Summarization}
+
+The \texttt{summarize.py} script also supports whole-file summarization via the \texttt{--file} flag:
+
+\begin{lstlisting}[style=plain]
+python summarize.py --file utils/inference.py
+\end{lstlisting}
+
+Rather than feeding the entire file to the model at once, the script uses Python's built-in \texttt{ast} module to parse the source and extract each \texttt{FunctionDef}, \texttt{AsyncFunctionDef}, and \texttt{ClassDef} node individually. For each definition, the corresponding source lines are sliced out and passed as a standalone snippet to the model:
+
+\begin{lstlisting}[style=python]
+tree = ast.parse(source)
+for node in ast.walk(tree):
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        snippet = "\n".join(lines[node.lineno - 1 : node.end_lineno])
+        summary = greedy_decode(model, tokenizer, snippet, device=device)
+\end{lstlisting}
+
+This design is deliberate: the model was trained on individual function-level examples from CodeXGLUE, so feeding it one function at a time keeps the input distribution consistent with training. Passing the entire file as a single input would exceed the 128-token context window for any non-trivial file, and the model has no mechanism to relate cross-function context anyway.
+
+The summaries are then printed as a numbered list, giving an overview of what the file does step by step:
+
+\begin{lstlisting}[style=plain]
+What 'utils/inference.py' does:
+
+  Step 1 (get_device): return device info
+  Step 2 (load_model): Load a trained transformer from a checkpoint file
+  Step 3 (load_tokenizer): Load the BPE tokenizer and attach a decoder
+  Step 4 (greedy_decode): Generate a docstring using beam search
+  Step 5 (beam_search_decode): Maintain the top N sequences at each decoding step
+\end{lstlisting}
+
 \section{Evaluation Metrics}
 
 We evaluate the trained model on the held-out test set (14,918 examples) using four complementary metrics that capture different aspects of summarization quality.
