@@ -47,8 +47,38 @@ python evaluate.py
 
 ### 6. Generate summaries
 
-Generate a docstring for any Python code snippet:
-
+**Single snippet:**
 ```bash
 python summarize.py --input "def add(x, y): return x + y"
 ```
+
+**Whole Python file** — summarizes every function and class, one step per definition:
+```bash
+python summarize.py --file utils/inference.py
+```
+
+**Whole Python file with comment/docstring stripping** — strips `#` comments and existing docstrings before passing to the model:
+```bash
+python summarize.py --file utils/inference.py --strip-comments
+```
+
+**Jupyter notebook** — summarizes each code cell:
+```bash
+python summarize.py --file notebooks/evaluation.ipynb
+```
+
+**Show code previews** alongside summaries (works with all modes):
+```bash
+python summarize.py --file utils/inference.py --code
+```
+
+**Optional flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--input` | — | Single code snippet to summarize |
+| `--file` | — | `.py` or `.ipynb` file to summarize |
+| `--strip-comments` | off | Strip `#` comments and docstrings before inference |
+| `--code` | off | Print code previews alongside summaries |
+| `--checkpoint` | `checkpoints/best_model.pt` | Path to model checkpoint |
+| `--tokenizer` | `data/tokenizer.json` | Path to tokenizer file |

@@ -598,6 +598,8 @@ The model demonstrates several positive characteristics. First, it converges ste
 
 \textbf{No pretrained weights.} Training from scratch with 77M parameters on 252K examples is data-limited compared to pretrained models like CodeT5 or CodeBERT, which leverage billions of tokens during pretraining. This accounts for much of the gap in specificity and fluency.
 
+\textbf{Sensitivity to existing docstrings in the input.} When the \texttt{--file} mode in \texttt{summarize.py} is used on functions that already contain docstrings, the model produces noticeably better summaries. This is because the encoder receives the existing natural language description as part of its input and effectively paraphrases it. When the docstrings are removed, the model must rely entirely on the code structure and produces weaker, more generic outputs. This reveals that a portion of the model's apparent summarization quality on well-documented code comes from re-reading existing documentation rather than true code understanding — a limitation that is masked during standard evaluation since the CodeXGLUE test set does not include pre-existing docstrings in the \texttt{code} field.
+
 \subsection{Possible Improvements}
 
 Several directions could improve performance: (1) increasing the training data or augmenting it with additional Python repositories, (2) using beam search during evaluation, (3) experimenting with longer sequence lengths (256 or 512 tokens) at the cost of increased training time, and (4) applying label smoothing to the cross-entropy loss to improve generalization.

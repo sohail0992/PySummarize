@@ -145,28 +145,27 @@ cython_debug/
 # macOS
 .DS_Store
 
-# LaTeX build artifacts (report/)
-report/*.aux
-report/*.fls
-report/*.log
-report/*.out
-report/*.toc
-report/*.synctex.gz
-report/*.fdb_latexmk
-report/*.bbl
-report/*.blg
-report/*.nav
-report/*.snm
-report/*.vrb
-report/*.dvi
-report/*.ps
-report/*.idx
-report/*.ilg
-report/*.ind
-report/*.lof
-report/*.lot
-report/*.maf
-report/*.mtc*
+# LaTeX build artifacts (report/ and root)
+*.aux
+*.fls
+*.out
+*.toc
+*.synctex.gz
+*.fdb_latexmk
+*.bbl
+*.blg
+*.nav
+*.snm
+*.vrb
+*.dvi
+*.ps
+*.idx
+*.ilg
+*.ind
+*.lof
+*.lot
+*.maf
+*.mtc*
 report/*.nlo
 report/*.nls
 report/*.run.xml
