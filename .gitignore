@@ -174,3 +174,13 @@ report/*.xdv
 
 # Checkpoints (large files)
 checkpoints/*.pt
+
+# Personal notes
+CLAUDE.md
+interview.md
+.claude/
+.cursor/
+.aider*
+.continue/
+.codeium/
+.github/copilot-instructions.md

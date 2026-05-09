@@ -356,7 +356,7 @@ Max sequence length & 128 tokens \\
 
 \section{Training Procedure}
 
-Training was conducted on Apple Silicon using MPS (Metal Performance Shaders) acceleration. To ensure compatibility with the Apple Silicon MPS backend, the \texttt{PYTORCH\_ENABLE\_MPS\_FALLBACK} environment variable was utilized. This allowed the model to handle specialized Transformer operations by falling back to the CPU where necessary, ensuring training stability on macOS. The full training run completed 10 epochs over the 251,820 training examples.
+Training was conducted on Apple Silicon using MPS (Metal Performance Shaders) acceleration. To ensure compatibility with the Apple Silicon MPS backend, the \texttt{PYTORCH\_ENABLE\_MPS\_FALLBACK} environment variable was utilized. This allowed the model to handle specialized Transformer operations by falling back to the CPU where necessary, so training ran without errors on macOS. The full training run completed 10 epochs over the 251,820 training examples.
 
 \subsection{Optimizer and Learning Rate Schedule}
 
@@ -420,7 +420,7 @@ Table~\ref{tab:training_results} shows the loss and perplexity for each epoch. T
 \label{tab:training_results}
 \end{table}
 
-The largest improvement occurred between epochs 1 and 2, where the validation loss dropped from 4.28 to 4.00. The model continued improving through all 10 epochs, with the best checkpoint saved at epoch 10 (validation loss = 3.5688, perplexity = 35.47). Importantly, the validation loss decreased every epoch, indicating that the model did not overfit despite having 77 million parameters. The gap between training and validation loss widened slightly over time (from 0.57 in epoch 1 to 0.45 in epoch 10 for the absolute difference), which is normal and expected behavior.
+The largest improvement occurred between epochs 1 and 2, where the validation loss dropped from 4.28 to 4.00. The model continued improving through all 10 epochs, with the best checkpoint saved at epoch 10 (validation loss = 3.5688, perplexity = 35.47). The validation loss decreased every epoch, showing that the model did not overfit despite having 77 million parameters. The gap between training and validation loss widened slightly over time (from 0.57 in epoch 1 to 0.45 in epoch 10 for the absolute difference), which is normal and expected behavior.
 
 \section{Inference and Decoding}
 
@@ -498,7 +498,7 @@ What 'utils/inference.py' does:
 
 \section{Evaluation Metrics}
 
-We evaluate the trained model on the held-out test set (14,918 examples) using four complementary metrics that capture different aspects of summarization quality.
+We evaluate the trained model on the held-out test set (14,918 examples) using four metrics that cover different aspects of summarization quality.
 
 \subsection{Test Loss and Perplexity}
 
@@ -556,7 +556,7 @@ ROUGE-L F1 & 0.3814 \\
 \label{tab:test_results}
 \end{table}
 
-The test perplexity (31.74) is slightly better than the validation perplexity at epoch 10 (35.47), indicating that the model generalizes well to unseen data. The BLEU score of 15.85\% and ROUGE-1 of 48.31\% are reasonable for a model trained from scratch without any pretrained language model weights.
+The test perplexity (31.74) is slightly better than the validation perplexity at epoch 10 (35.47), showing the model generalizes well to unseen data. The BLEU score of 15.85\% and ROUGE-1 of 48.31\% are reasonable for a model trained from scratch without any pretrained language model weights.
 
 \subsection{Qualitative Examples}
 
@@ -580,13 +580,13 @@ Table~\ref{tab:qualitative} shows five examples from the test set comparing the 
 \label{tab:qualitative}
 \end{table}
 
-The model captures the general domain and intent of each function. For \texttt{print\_log}, the prediction ``Log a message to a logger'' is semantically close to the reference ``Print a log message to standard error,'' correctly identifying the logging purpose though missing the specific destination. For the download functions, the model recognizes the URL-related nature but confuses ``download'' with ``search.''
+The model captures the general topic of each function. For \texttt{print\_log}, the prediction ``Log a message to a logger'' is semantically close to the reference ``Print a log message to standard error,'' correctly identifying the logging purpose though missing the specific destination. For the download functions, the model recognizes the URL-related nature but confuses ``download'' with ``search.''
 
 \section{Discussion and Limitations}
 
 \subsection{Strengths}
 
-The model demonstrates several positive characteristics. First, it converges steadily over 10 epochs without overfitting, as evidenced by the continuously decreasing validation loss. Second, the test perplexity improves over the validation perplexity, suggesting good generalization. Third, the ROUGE-1 F1 of 48.31\% indicates that nearly half of the unigrams in the reference are captured in the predictions, meaning the model learns the correct vocabulary for describing code.
+The model converges steadily over 10 epochs without overfitting, shown by the decreasing validation loss across all epochs. Test perplexity improves over the validation perplexity, suggesting good generalization. The ROUGE-1 F1 of 48.31\% means nearly half of the unigrams in the reference appear in the predictions, so the model has learned the correct vocabulary for describing code.
 
 \subsection{Limitations}
 
@@ -596,13 +596,13 @@ The model demonstrates several positive characteristics. First, it converges ste
 
 \textbf{Greedy decoding.} As discussed in Section~8, greedy decoding can produce repetitive outputs for short or atypical inputs. Beam search (Section~8.2) mitigates this but was not used for the evaluation metrics.
 
-\textbf{No pretrained weights.} Training from scratch with 77M parameters on 252K examples is data-limited compared to pretrained models like CodeT5 or CodeBERT, which leverage billions of tokens during pretraining. This accounts for much of the gap in specificity and fluency.
+\textbf{No pretrained weights.} Training from scratch with 77M parameters on 252K examples is data-limited compared to pretrained models like CodeT5 or CodeBERT, which use billions of tokens during pretraining. This accounts for much of the gap in specificity and fluency.
 
-\textbf{Sensitivity to existing docstrings in the input.} When the \texttt{--file} mode in \texttt{summarize.py} is used on functions that already contain docstrings, the model produces noticeably better summaries. This is because the encoder receives the existing natural language description as part of its input and effectively paraphrases it. When the docstrings are removed, the model must rely entirely on the code structure and produces weaker, more generic outputs. This reveals that a portion of the model's apparent summarization quality on well-documented code comes from re-reading existing documentation rather than true code understanding — a limitation that is masked during standard evaluation since the CodeXGLUE test set does not include pre-existing docstrings in the \texttt{code} field.
+\textbf{Sensitivity to existing docstrings in the input.} When the \texttt{--file} mode in \texttt{summarize.py} is used on functions that already contain docstrings, the model produces better summaries. This is because the encoder receives the existing natural language description as part of its input and effectively paraphrases it. When the docstrings are removed, the model must rely entirely on the code structure and produces weaker, more generic outputs. This reveals that a portion of the model's apparent summarization quality on well-documented code comes from re-reading existing documentation rather than true code understanding. This limitation is masked during standard evaluation since the CodeXGLUE test set does not include pre-existing docstrings in the \texttt{code} field.
 
 \subsection{Possible Improvements}
 
-Several directions could improve performance: (1) increasing the training data or augmenting it with additional Python repositories, (2) using beam search during evaluation, (3) experimenting with longer sequence lengths (256 or 512 tokens) at the cost of increased training time, and (4) applying label smoothing to the cross-entropy loss to improve generalization.
+A few directions worth exploring: (1) increasing the training data or augmenting it with additional Python repositories, (2) using beam search during evaluation, (3) trying longer sequence lengths (256 or 512 tokens) at the cost of increased training time, and (4) applying label smoothing to the cross-entropy loss to improve generalization.
 
 \begin{thebibliography}{9}
 
@@ -656,7 +656,7 @@ C.-Y.~Lin,
 Muhammad Sohail & 7178621 & Model design and implementation, training \\
  & & pipeline, tokenization, inference, evaluation, \\
  & & testing, and report metadata \\
-Bareerah Muslim & 7175312 & Data understanding, evaluation, layer \\
+Syed Umair Anwar & 7172248 & Data understanding, evaluation, layer \\
  & & configuration based on data analysis, \\
  & & testing, and report writing \\
 \bottomrule

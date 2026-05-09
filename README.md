@@ -52,6 +52,12 @@ python evaluate.py
 python summarize.py --input "def add(x, y): return x + y"
 ```
 
+**Multi-line snippet** — quoted strings in bash can span multiple lines:
+```bash
+python summarize.py --input "def add(x, y):
+    return x + y"
+```
+
 **Whole Python file** — summarizes every function and class, one step per definition:
 ```bash
 python summarize.py --file utils/inference.py
