@@ -110,7 +110,14 @@ python summarize.py --file utils/inference.py --code
 
 **Use a different model checkpoint:**
 ```bash
-python summarize.py --input "def foo(): pass" --checkpoint checkpoints/best_model.pt
+python summarize.py --input "def read_csv_file(filepath):
+    import csv
+    data = []
+    with open(filepath, 'r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            data.append(row)
+    return data" --checkpoint checkpoints/best_model.pt
 ```
 
 **Optional flags:**
