@@ -6,6 +6,51 @@ A PyTorch encoder-decoder Transformer trained from scratch to generate natural l
 
 - Python 3.10+
 
+## Quick Examples
+
+The model achieves best results on functions with 7+ lines (trained with 75% complex functions per batch). Here are three examples with self-explanatory function names:
+
+**Example 1 — Find duplicates in list:**
+```bash
+python summarize.py --input "def find_duplicates(items):
+    seen = set()
+    duplicates = []
+    for item in items:
+        if item in seen:
+            if item not in duplicates:
+                duplicates.append(item)
+        else:
+            seen.add(item)
+    return duplicates"
+```
+Summary: `Find items in collection`
+
+**Example 2 — Read CSV file:**
+```bash
+python summarize.py --input "def read_csv_file(filepath):
+    import csv
+    data = []
+    with open(filepath, 'r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            data.append(row)
+    return data"
+```
+Summary: `Read CSV file`
+
+**Example 3 — Filter values by threshold:**
+```bash
+python summarize.py --input "def filter_by_threshold(values, threshold):
+    if not values:
+        return []
+    filtered = []
+    for value in values:
+        if value >= threshold:
+            filtered.append(value)
+    return filtered"
+```
+Summary: `Parse filter values`
+
 ## How to Run
 
 ### 1. Create virtual environment
@@ -45,42 +90,9 @@ Computes test loss, perplexity, BLEU, and ROUGE scores on the test set (14,918 e
 python evaluate.py
 ```
 
-### 6. Generate summaries
+### 6. More options
 
-**Example 1 — Parse JSON file (7 lines):**
-```bash
-python summarize.py --input "def parse_json_file(filepath):
-    import json
-    with open(filepath, 'r') as f:
-        data = json.load(f)
-    return data"
-```
-
-Output: `return json`
-
-**Example 2 — Validate email address (8 lines):**
-```bash
-python summarize.py --input "def is_valid_email(email):
-    import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    if not email:
-        return False
-    return re.match(pattern, email) is not None"
-```
-
-**Example 3 — Calculate statistics (9 lines):**
-```bash
-python summarize.py --input "def calculate_statistics(numbers):
-    if not numbers:
-        return None
-    total = sum(numbers)
-    avg = total / len(numbers)
-    minimum = min(numbers)
-    maximum = max(numbers)
-    return {'average': avg, 'min': minimum, 'max': maximum}"
-```
-
-**File summarization (works best):**
+**File summarization (recommended):**
 ```bash
 python summarize.py --file utils/inference.py
 ```
@@ -100,5 +112,3 @@ python summarize.py --file utils/inference.py --code
 | `--code` | off | Print code previews alongside summaries |
 | `--checkpoint` | `checkpoints/best_model_v2.pt` | Path to model checkpoint |
 | `--tokenizer` | `data/tokenizer.json` | Path to tokenizer file |
-
-**Note:** The model performs best on functions with 7+ lines of code. Shorter functions may produce less coherent summaries due to limited context for the encoder.
