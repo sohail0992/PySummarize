@@ -101,8 +101,8 @@ def main():
                        help='Single code snippet, e.g. "def add(x, y): return x + y"')
     group.add_argument("--file", type=str,
                        help="Python .py or .ipynb file to summarize")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/best_model.pt",
-                        help="Path to model checkpoint (default: checkpoints/best_model.pt)")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/best_model_v2.pt",
+                        help="Path to model checkpoint (default: checkpoints/best_model_v2.pt)")
     parser.add_argument("--tokenizer", type=str, default="data/tokenizer.json",
                         help="Path to tokenizer file (default: data/tokenizer.json)")
     parser.add_argument("--code", action="store_true",
