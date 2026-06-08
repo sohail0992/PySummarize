@@ -544,19 +544,54 @@ Table~\ref{tab:test_results} presents the evaluation metrics computed on the ful
 \toprule
 \textbf{Metric} & \textbf{Value} \\
 \midrule
-Test Loss & 3.4577 \\
-Test Perplexity & 31.74 \\
-BLEU & 0.1585 \\
-ROUGE-1 F1 & 0.4831 \\
-ROUGE-2 F1 & 0.1991 \\
-ROUGE-L F1 & 0.3814 \\
+Test Loss & 3.4126 \\
+Test Perplexity & 30.34 \\
+BLEU & 0.1717 \\
+ROUGE-1 F1 & 0.5165 \\
+ROUGE-2 F1 & 0.2251 \\
+ROUGE-L F1 & 0.4031 \\
 \bottomrule
 \end{tabular}
 \caption{Evaluation metrics on the test set.}
 \label{tab:test_results}
 \end{table}
 
-The test perplexity (31.74) is slightly better than the validation perplexity at epoch 10 (35.47), showing the model generalizes well to unseen data. The BLEU score of 15.85\% and ROUGE-1 of 48.31\% are reasonable for a model trained from scratch without any pretrained language model weights.
+The test perplexity (30.34) is better than the validation perplexity at epoch 10 (34.21), showing good generalization to unseen data. By adopting class-balanced batch sampling during training (25\% trivial, 75\% complex functions per batch), the model achieved significant improvements over the baseline: BLEU increased by 8.32\% (0.1585 $\rightarrow$ 0.1717), ROUGE-1 by 6.91\% (0.4831 $\rightarrow$ 0.5165), and ROUGE-2 by 13.05\% (0.1991 $\rightarrow$ 0.2251). These gains demonstrate that addressing the data distribution bias in CodeXGLUE (91.11\% complex, 0.95\% trivial functions) improves model performance across all metrics.
+
+\subsection{Class-Balanced Batch Sampling}
+
+We identified a critical data distribution bias in the CodeXGLUE training set: 91.11\% of examples are complex functions (7+ lines), while only 0.95\% are trivial (1-3 lines). This creates a severe class imbalance where the model sees 96 complex functions for every 1 trivial function, causing it to learn patterns optimized for complex code at the expense of simple functions.
+
+To address this, we implemented \textbf{StratifiedBatchSampler}, which constructs balanced mini-batches during training. For each batch of size 32, the sampler ensures:
+\begin{itemize}
+\item 8 trivial examples (1-3 lines) — 25\% of batch
+\item 24 complex examples (7+ lines) — 75\% of batch
+\item Random shuffling within each batch to prevent ordering bias
+\end{itemize}
+
+This approach forces the model to learn both trivial and complex patterns simultaneously during training, without requiring synthetic data or fine-tuning (which can cause catastrophic forgetting).
+
+\textbf{Results:} Class-balanced sampling improved all metrics:
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Metric} & \textbf{Baseline} & \textbf{Balanced} & \textbf{Improvement} & \textbf{\%} \\
+\midrule
+BLEU & 0.1585 & 0.1717 & +0.0132 & +8.32\% \\
+ROUGE-1 F1 & 0.4831 & 0.5165 & +0.0334 & +6.91\% \\
+ROUGE-2 F1 & 0.1991 & 0.2251 & +0.0260 & +13.05\% \\
+ROUGE-L F1 & 0.3814 & 0.4031 & +0.0217 & +5.69\% \\
+\bottomrule
+\end{tabular}
+\caption{Impact of class-balanced batch sampling on test metrics.}
+\end{table}
+
+The largest improvement was in ROUGE-2 (+13.05\%), which measures bigram overlap and is sensitive to the model's ability to generate correct multi-word phrases. This suggests that balanced sampling helps the model learn more diverse and accurate token sequences, particularly beneficial for capturing semantic relationships between multiple tokens.
+
+\subsection{CodeBERT Baseline Comparison}
+
+We also trained CodeBERT (microsoft/codebert-base) as a pretrained encoder-decoder baseline on the same dataset. After 1 epoch on Kaggle, the model achieved a loss of 0.1070 (compared to our from-scratch model's epoch 1 loss of 4.85), indicating CodeBERT's strong pretraining benefit. Training was stopped due to Kaggle's notebook time limit, but the steep loss trajectory suggests continued training would yield significantly lower loss and likely superior metrics. Full training and evaluation logs are available at: \url{https://www.kaggle.com/code/msohail01/notebookb2c19e9944}.
 
 \subsection{Qualitative Examples}
 
@@ -569,10 +604,10 @@ Table~\ref{tab:qualitative} shows five examples from the test set comparing the 
 \toprule
 \textbf{Function} & \textbf{Reference} & \textbf{Predicted} \\
 \midrule
-\texttt{sina\_xml\_to\_url\_list} & Convert XML to URL List. From Biligrab. & Parse URL to URL \\
-\texttt{dailymotion\_download} & Downloads Dailymotion videos by URL. & Search URL by pattern \\
-\texttt{sina\_download} & Downloads Sina videos by URL. & Search URL by url \\
-\texttt{sprint} & Format text with color or other effects into ANSI escaped string. & Convert text into unicode string. \\
+\texttt{sina\_xml\_to\_url\_list} & Convert XML to URL List. From Biligrab. & Convert url to raw URL \\
+\texttt{dailymotion\_download} & Downloads Dailymotion videos by URL. & get html by url \\
+\texttt{sina\_download} & Downloads Sina videos by URL. & Download output by url \\
+\texttt{sprint} & Format text with color or other effects into ANSI escaped string. & Splits text into string with color codes. \\
 \texttt{print\_log} & Print a log message to standard error. & Log a message to a logger. \\
 \bottomrule
 \end{tabular}
@@ -580,13 +615,13 @@ Table~\ref{tab:qualitative} shows five examples from the test set comparing the 
 \label{tab:qualitative}
 \end{table}
 
-The model captures the general topic of each function. For \texttt{print\_log}, the prediction ``Log a message to a logger'' is semantically close to the reference ``Print a log message to standard error,'' correctly identifying the logging purpose though missing the specific destination. For the download functions, the model recognizes the URL-related nature but confuses ``download'' with ``search.''
+The improved model shows better semantic understanding. For \texttt{print\_log}, the prediction ``Log a message to a logger'' remains semantically close to the reference ``Print a log message to standard error,'' correctly identifying the logging purpose. For the download and URL functions, the model now better recognizes the action verbs (``Download,'' ``get,'' ``Convert'') alongside the URL-related concepts, showing improvement over prior baselines. The predictions for \texttt{sprint} correctly capture the string formatting operation. However, the model still struggles with capturing specificity (e.g., ``get html by url'' vs. ``Downloads Dailymotion videos by URL''), indicating that while class-balanced sampling improves overall metrics, the fundamental challenge of differentiating service-specific actions remains.
 
 \section{Discussion and Limitations}
 
 \subsection{Strengths}
 
-The model converges steadily over 10 epochs without overfitting, shown by the decreasing validation loss across all epochs. Test perplexity improves over the validation perplexity, suggesting good generalization. The ROUGE-1 F1 of 48.31\% means nearly half of the unigrams in the reference appear in the predictions, so the model has learned the correct vocabulary for describing code.
+The model converges steadily over 10 epochs without overfitting, shown by the decreasing validation loss across all epochs. Test perplexity improves over the validation perplexity, suggesting good generalization. Class-balanced batch sampling proved effective: the model achieved a BLEU score of 17.17\% and ROUGE-1 F1 of 51.65\%, meaning over half of the unigrams in the reference appear in the predictions. The 8.32\% improvement in BLEU and 13.05\% improvement in ROUGE-2 compared to the baseline demonstrates that addressing data distribution bias is a practical technique for improving code summarization models trained from scratch.
 
 \subsection{Limitations}
 
