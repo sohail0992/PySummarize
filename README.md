@@ -35,11 +35,11 @@ jupyter notebook data/tokenizer_training.ipynb
 python train.py
 ```
 
-Best model checkpoint saves to `checkpoints/best_model.pt` and training history to `training_history.json`.
+Best model checkpoint saves to `checkpoints/best_model_v2.pt` and training history to `logs/training_history.json`.
 
 ### 5. Evaluate the model
 
-Computes test loss, perplexity, BLEU, and ROUGE scores on the test set (14,918 examples). BLEU/ROUGE are computed on a 500-example subset using greedy decoding. Results are saved to `evaluation_results.json`.
+Computes test loss, perplexity, BLEU, and ROUGE scores on the test set (14,918 examples). BLEU/ROUGE are computed on a 500-example subset using beam search. Results are saved to `logs/evaluation_results.json`.
 
 ```bash
 python evaluate.py
@@ -47,33 +47,45 @@ python evaluate.py
 
 ### 6. Generate summaries
 
-**Single snippet:**
+**Example 1 — Parse JSON file (7 lines):**
 ```bash
-python summarize.py --input "def add(x, y): return x + y"
+python summarize.py --input "def parse_json_file(filepath):
+    import json
+    with open(filepath, 'r') as f:
+        data = json.load(f)
+    return data"
 ```
 
-**Multi-line snippet** — quoted strings in bash can span multiple lines:
+Output: `return json`
+
+**Example 2 — Validate email address (8 lines):**
 ```bash
-python summarize.py --input "def add(x, y):
-    return x + y"
+python summarize.py --input "def is_valid_email(email):
+    import re
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not email:
+        return False
+    return re.match(pattern, email) is not None"
 ```
 
-**Whole Python file** — summarizes every function and class, one step per definition:
+**Example 3 — Calculate statistics (9 lines):**
+```bash
+python summarize.py --input "def calculate_statistics(numbers):
+    if not numbers:
+        return None
+    total = sum(numbers)
+    avg = total / len(numbers)
+    minimum = min(numbers)
+    maximum = max(numbers)
+    return {'average': avg, 'min': minimum, 'max': maximum}"
+```
+
+**File summarization (works best):**
 ```bash
 python summarize.py --file utils/inference.py
 ```
 
-**Whole Python file with comment/docstring stripping** — strips `#` comments and existing docstrings before passing to the model:
-```bash
-python summarize.py --file utils/inference.py --strip-comments
-```
-
-**Jupyter notebook** — summarizes each code cell:
-```bash
-python summarize.py --file notebooks/evaluation.ipynb
-```
-
-**Show code previews** alongside summaries (works with all modes):
+**With code preview:**
 ```bash
 python summarize.py --file utils/inference.py --code
 ```
@@ -83,8 +95,10 @@ python summarize.py --file utils/inference.py --code
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--input` | — | Single code snippet to summarize |
-| `--file` | — | `.py` or `.ipynb` file to summarize |
+| `--file` | — | `.py` file to summarize |
 | `--strip-comments` | off | Strip `#` comments and docstrings before inference |
 | `--code` | off | Print code previews alongside summaries |
-| `--checkpoint` | `checkpoints/best_model.pt` | Path to model checkpoint |
+| `--checkpoint` | `checkpoints/best_model_v2.pt` | Path to model checkpoint |
 | `--tokenizer` | `data/tokenizer.json` | Path to tokenizer file |
+
+**Note:** The model performs best on functions with 7+ lines of code. Shorter functions may produce less coherent summaries due to limited context for the encoder.
