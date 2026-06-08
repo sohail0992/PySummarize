@@ -8,7 +8,7 @@ A PyTorch encoder-decoder Transformer trained from scratch to generate natural l
 
 ## Quick Examples
 
-The model achieves best results on functions with 7+ lines (trained with 75% complex functions per batch). Here are three examples with self-explanatory function names:
+The model achieves best results on functions with 7+ lines (trained with 75% complex functions per batch using class-balanced batch sampling). Here are three examples with self-explanatory function names:
 
 **Example 1 — Find duplicates in list:**
 ```bash
@@ -50,6 +50,12 @@ python summarize.py --input "def filter_by_threshold(values, threshold):
     return filtered"
 ```
 Summary: `Parse filter values`
+
+## Model Checkpoints
+
+Two models are included:
+- **`best_model_v2.pt`** (default) — Trained with class-balanced batch sampling (25% trivial, 75% complex functions per batch). **Recommended.**
+- **`best_model.pt`** — Trained with standard sampling (original 91% complex, 0.95% trivial distribution).
 
 ## How to Run
 
@@ -100,6 +106,11 @@ python summarize.py --file utils/inference.py
 **With code preview:**
 ```bash
 python summarize.py --file utils/inference.py --code
+```
+
+**Use a different model checkpoint:**
+```bash
+python summarize.py --input "def foo(): pass" --checkpoint checkpoints/best_model.pt
 ```
 
 **Optional flags:**
