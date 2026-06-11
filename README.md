@@ -131,9 +131,9 @@ python summarize.py --input "def read_csv_file(filepath):
 | `--checkpoint` | `checkpoints/best_model_v2.pt` | Path to model checkpoint |
 | `--tokenizer` | `data/tokenizer.json` | Path to tokenizer file |
 
-## Related Work
+## Medium
 
-Read the detailed write-up on Medium: [A Step-by-Step Guide to Building a Python Code Summarizer](https://medium.com/@msohail.se/a-step-by-step-guide-to-building-a-python-code-summarizer-13c10df86b1f)
+Read the detailed write-up on Medium for the tokenizer part: [A Step-by-Step Guide to Building a Python Code Summarizer](https://medium.com/@msohail.se/a-step-by-step-guide-to-building-a-python-code-summarizer-13c10df86b1f)
 
 ## References
 
