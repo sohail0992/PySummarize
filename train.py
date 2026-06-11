@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from tokenizers import Tokenizer
 
 from models.transformer import Transformer
-from utils.dataset import CodeSummarizationDataset, collate_fn, PAD_ID
+from utils.dataset import CodeSummarizationDataset, collate_fn, PAD_ID, StratifiedBatchSampler
 
 
 # Noam learning rate schedule from "Attention Is All You Need"
@@ -62,9 +62,19 @@ def train():
     print("Loading validation dataset...")
     val_dataset = CodeSummarizationDataset("validation", tokenizer_path)
 
+    # use a custom StratifiedBatchSampler to ensure each batch has a mix of short and long examples, which can help stabilize training
+    # stratified sampling is a technique to ensure that each batch has a representative mix of different types of examples,
+    # in this case based on the length of the code snippets.
+    train_sampler = StratifiedBatchSampler(train_dataset, batch_size=batch_size, target_ratio=0.25)
+
     # get ids from batch collate_fn in utils/dataset.py
+    # train_loader and val_loader will yield batches of data with padded sequences, ready for input to the model
+    # collate_fn takes care of padding sequences in a batch to the same length, which is necessary for efficient processing by the model.
+    # for example, if we have a batch of 3 code snippets with lengths 3, 5, and 2, after collate_fn they will all be padded to length 5:
+    # train_sampler ensures that each batch contains a mix of short and long code snippets, which can help the model learn to handle both simple and complex examples effectively.
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True,
+        train_dataset, batch_sampler=train_sampler,
+        shuffle=False,  # shuffle is False because StratifiedBatchSampler already handles shuffling
         collate_fn=collate_fn, num_workers=2, pin_memory=True,
     )
     val_loader = DataLoader(
@@ -181,7 +191,7 @@ def train():
                 "vocab_size": vocab_size,
                 "d_model": d_model,
             }
-            torch.save(checkpoint, os.path.join(checkpoint_dir, "best_model.pt"))
+            torch.save(checkpoint, os.path.join(checkpoint_dir, "best_model_v2.pt"))
             print(f"  Saved best model (val_loss={avg_val_loss:.4f})")
 
     # save for plotting in notebooks/training.ipynb
