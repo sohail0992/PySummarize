@@ -26,7 +26,7 @@ import argparse
 # enable MPS fallback for unsupported ops
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
-from utils.inference import load_model, load_tokenizer, beam_search_decode, get_device
+from utils.inference import load_model, load_tokenizer, greedy_decode, get_device
 
 
 def _strip(raw: str, node=None) -> str:
@@ -101,8 +101,8 @@ def main():
                        help='Single code snippet, e.g. "def add(x, y): return x + y"')
     group.add_argument("--file", type=str,
                        help="Python .py or .ipynb file to summarize")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/best_model_v2.pt",
-                        help="Path to model checkpoint (default: checkpoints/best_model_v2.pt)")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/best_model.pt",
+                        help="Path to model checkpoint (default: checkpoints/best_model.pt)")
     parser.add_argument("--tokenizer", type=str, default="data/tokenizer.json",
                         help="Path to tokenizer file (default: data/tokenizer.json)")
     parser.add_argument("--code", action="store_true",
@@ -120,7 +120,7 @@ def main():
 
     # --- single snippet mode ---
     if args.input:
-        summary = beam_search_decode(model, tokenizer, args.input, device=device)
+        summary = greedy_decode(model, tokenizer, args.input, device=device)
         print(f"Code:    {args.input}")
         print(f"Summary: {summary}")
         return

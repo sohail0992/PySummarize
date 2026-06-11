@@ -24,7 +24,7 @@ from utils.inference import load_model, load_tokenizer, greedy_decode, get_devic
 def evaluate():
     print("Starting evaluation...")
 
-    checkpoint_path = "checkpoints/best_model_v2.pt"
+    checkpoint_path = "checkpoints/best_model.pt"
     tokenizer_path = "data/tokenizer.json"
     num_bleu_samples = 500  # greedy decode is slow, so we evaluate BLEU/ROUGE on a subset
 
