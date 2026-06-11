@@ -2,8 +2,9 @@
 Data loading and processing utilities
 """
 
+import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 from tokenizers import Tokenizer
 from datasets import load_dataset
 
@@ -84,3 +85,127 @@ def collate_fn(batch):
         "decoder_input": decoder_inputs,
         "decoder_target": decoder_targets,
     }
+
+
+class StratifiedBatchSampler(Sampler):
+    """
+    Create batches with balanced class distribution.
+    Instead of random shuffle (which gives 91% complex), ensure each batch has:
+    - target_ratio% trivial examples (1-3 lines)
+    - (1-target_ratio)% complex examples (7+ lines)
+
+    This forces the model to learn both trivial and complex patterns equally.
+    """
+
+    def __init__(self, dataset, batch_size, target_ratio=0.25):
+        """
+        Initialize the stratified sampler.
+
+        Args:
+            dataset: CodeSummarizationDataset instance with data[idx]["code"]
+            batch_size: how many examples per batch (e.g., 32)
+            target_ratio: fraction of trivial examples in each batch (e.g., 0.25 = 25%)
+        """
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.target_ratio = target_ratio
+
+        # STEP 1: Scan all training examples and separate by complexity
+        # We store INDICES (positions), not the actual code
+        self.trivial_indices = []  # positions of 1-3 line functions
+        self.complex_indices = []  # positions of 7+ line functions
+
+        print("Analyzing dataset complexity distribution...")
+        for idx in range(len(dataset)):
+            # Get code from dataset
+            code = dataset.data[idx]["code"]
+            # Count lines in this code
+            num_lines = len(code.strip().split('\n'))
+
+            # Categorize: trivial = 1-3 lines, complex = 7+ lines
+            # Skip 4-6 lines (simple category) to have clear distinction
+            if num_lines <= 3:
+                self.trivial_indices.append(idx)
+            elif num_lines >= 7:
+                self.complex_indices.append(idx)
+
+        # Print statistics
+        print(f"  Trivial (1-3 lines):  {len(self.trivial_indices):,}")
+        print(f"  Complex (7+ lines):   {len(self.complex_indices):,}")
+
+        # STEP 2: Calculate how many trivial/complex per batch
+        # If target_ratio=0.25 and batch_size=32:
+        # - num_trivial_per_batch = 32 * 0.25 = 8
+        # - num_complex_per_batch = 32 - 8 = 24
+        self.num_trivial_per_batch = int(batch_size * target_ratio)
+        self.num_complex_per_batch = batch_size - self.num_trivial_per_batch
+
+        print(f"  Per batch: {self.num_trivial_per_batch} trivial + {self.num_complex_per_batch} complex")
+
+    def __iter__(self):
+        """
+        Generate batches with balanced distribution.
+        This is called by DataLoader to get batches of indices.
+
+        Yields:
+            List of batch_size indices representing one batch
+            Each batch has num_trivial_per_batch trivial + num_complex_per_batch complex
+        """
+
+        # STEP 1: Make copies and shuffle both lists
+        # We shuffle to randomize which examples appear in which batch
+        trivial_shuffled = self.trivial_indices.copy()  # [47, 152, 289, ...]
+        complex_shuffled = self.complex_indices.copy()  # [1, 3, 5, 7, ...]
+        np.random.shuffle(trivial_shuffled)  # Randomize order
+        np.random.shuffle(complex_shuffled)
+
+        # STEP 2: Track position in each list as we build batches
+        trivial_ptr = 0   # Points to next trivial to pick
+        complex_ptr = 0   # Points to next complex to pick
+
+        # STEP 3: Build batches until we run out of complex examples
+        while complex_ptr < len(complex_shuffled):
+            batch = []
+
+            # Add trivial examples to batch
+            for _ in range(self.num_trivial_per_batch):
+                # Check if we've used all trivial examples
+                if trivial_ptr >= len(trivial_shuffled):
+                    # Loop back: reset pointer and reshuffle
+                    trivial_ptr = 0
+                    np.random.shuffle(trivial_shuffled)
+
+                # Add this trivial example's index to batch
+                batch.append(trivial_shuffled[trivial_ptr])
+                trivial_ptr += 1
+
+            # Add complex examples to batch
+            for _ in range(self.num_complex_per_batch):
+                # Check if we've run out of complex examples
+                if complex_ptr >= len(complex_shuffled):
+                    break
+
+                # Add this complex example's index to batch
+                batch.append(complex_shuffled[complex_ptr])
+                complex_ptr += 1
+
+            # Only yield if batch is full (has exactly batch_size examples)
+            if len(batch) == self.batch_size:
+                # Shuffle within batch so trivial/complex aren't grouped together
+                # This way the model doesn't see patterns like "first 8 are trivial"
+                np.random.shuffle(batch)
+
+                # Yield this batch of indices
+                # DataLoader will use these to fetch actual examples
+                yield batch
+
+    def __len__(self):
+        """
+        Return number of batches we'll generate per epoch.
+        Used by DataLoader for progress bars and epoch logic.
+
+        Returns:
+            Approximate number of batches (based on complex examples available)
+        """
+        # Number of batches = how many groups of complex_per_batch we can make
+        return len(self.complex_indices) // self.num_complex_per_batch

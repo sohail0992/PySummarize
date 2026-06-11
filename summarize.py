@@ -26,7 +26,7 @@ import argparse
 # enable MPS fallback for unsupported ops
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
-from utils.inference import load_model, load_tokenizer, greedy_decode, get_device
+from utils.inference import load_model, load_tokenizer, beam_search_decode, get_device
 
 
 def _strip(raw: str, node=None) -> str:
@@ -120,7 +120,7 @@ def main():
 
     # --- single snippet mode ---
     if args.input:
-        summary = greedy_decode(model, tokenizer, args.input, device=device)
+        summary = beam_search_decode(model, tokenizer, args.input, device=device)
         print(f"Code:    {args.input}")
         print(f"Summary: {summary}")
         return
