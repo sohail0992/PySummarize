@@ -91,10 +91,10 @@ class StratifiedBatchSampler(Sampler):
     """
     Create batches with balanced class distribution.
     Instead of random shuffle (which gives 91% complex), ensure each batch has:
-    - target_ratio% trivial examples (1-3 lines)
-    - (1-target_ratio)% complex examples (7+ lines)
+    - target_ratio% simple examples (1-3 lines)
+    - (1-target_ratio)% complex examples (4+ lines)
 
-    This forces the model to learn both trivial and complex patterns equally.
+    This forces the model to learn both simple and complex patterns equally.
     """
 
     def __init__(self, dataset, batch_size, target_ratio=0.25):
@@ -112,8 +112,8 @@ class StratifiedBatchSampler(Sampler):
 
         # STEP 1: Scan all training examples and separate by complexity
         # We store INDICES (positions), not the actual code
-        self.trivial_indices = []  # positions of 1-3 line functions
-        self.complex_indices = []  # positions of 7+ line functions
+        self.simple_indices = []  # positions of 1-3 line functions
+        self.complex_indices = []  # positions of 4+ line functions
 
         print("Analyzing dataset complexity distribution...")
         for idx in range(len(dataset)):
@@ -122,25 +122,24 @@ class StratifiedBatchSampler(Sampler):
             # Count lines in this code
             num_lines = len(code.strip().split('\n'))
 
-            # Categorize: trivial = 1-3 lines, complex = 7+ lines
-            # Skip 4-6 lines (simple category) to have clear distinction
+            # Categorize: simple = 1-3 lines, complex = 4+ lines
             if num_lines <= 3:
-                self.trivial_indices.append(idx)
-            elif num_lines >= 7:
+                self.simple_indices.append(idx)
+            elif num_lines >= 4:
                 self.complex_indices.append(idx)
 
         # Print statistics
-        print(f"  Trivial (1-3 lines):  {len(self.trivial_indices):,}")
-        print(f"  Complex (7+ lines):   {len(self.complex_indices):,}")
+        print(f"  Simple (1-3 lines):   {len(self.simple_indices):,}")
+        print(f"  Complex (4+ lines):   {len(self.complex_indices):,}")
 
         # STEP 2: Calculate how many trivial/complex per batch
         # If target_ratio=0.25 and batch_size=32:
         # - num_trivial_per_batch = 32 * 0.25 = 8
         # - num_complex_per_batch = 32 - 8 = 24
-        self.num_trivial_per_batch = int(batch_size * target_ratio)
-        self.num_complex_per_batch = batch_size - self.num_trivial_per_batch
+        self.num_simple_per_batch = int(batch_size * target_ratio)
+        self.num_complex_per_batch = batch_size - self.num_simple_per_batch
 
-        print(f"  Per batch: {self.num_trivial_per_batch} trivial + {self.num_complex_per_batch} complex")
+        print(f"  Per batch: {self.num_simple_per_batch} simple + {self.num_complex_per_batch} complex")
 
     def __iter__(self):
         """
@@ -154,30 +153,30 @@ class StratifiedBatchSampler(Sampler):
 
         # STEP 1: Make copies and shuffle both lists
         # We shuffle to randomize which examples appear in which batch
-        trivial_shuffled = self.trivial_indices.copy()  # [47, 152, 289, ...]
+        simple_shuffled = self.simple_indices.copy()  # [47, 152, 289, ...]
         complex_shuffled = self.complex_indices.copy()  # [1, 3, 5, 7, ...]
-        np.random.shuffle(trivial_shuffled)  # Randomize order
+        np.random.shuffle(simple_shuffled)  # Randomize order
         np.random.shuffle(complex_shuffled)
 
         # STEP 2: Track position in each list as we build batches
-        trivial_ptr = 0   # Points to next trivial to pick
+        simple_ptr = 0   # Points to next simple to pick
         complex_ptr = 0   # Points to next complex to pick
 
         # STEP 3: Build batches until we run out of complex examples
         while complex_ptr < len(complex_shuffled):
             batch = []
 
-            # Add trivial examples to batch
-            for _ in range(self.num_trivial_per_batch):
-                # Check if we've used all trivial examples
-                if trivial_ptr >= len(trivial_shuffled):
+            # Add simple examples to batch
+            for _ in range(self.num_simple_per_batch):
+                # Check if we've used all simple examples
+                if simple_ptr >= len(simple_shuffled):
                     # Loop back: reset pointer and reshuffle
-                    trivial_ptr = 0
-                    np.random.shuffle(trivial_shuffled)
+                    simple_ptr = 0
+                    np.random.shuffle(simple_shuffled)
 
-                # Add this trivial example's index to batch
-                batch.append(trivial_shuffled[trivial_ptr])
-                trivial_ptr += 1
+                # Add this simple example's index to batch
+                batch.append(simple_shuffled[simple_ptr])
+                simple_ptr += 1
 
             # Add complex examples to batch
             for _ in range(self.num_complex_per_batch):
@@ -207,5 +206,5 @@ class StratifiedBatchSampler(Sampler):
         Returns:
             Approximate number of batches (based on complex examples available)
         """
-        # Number of batches = how many groups of complex_per_batch we can make
+        # Number of batches = how many complete batches we can make
         return len(self.complex_indices) // self.num_complex_per_batch
